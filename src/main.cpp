@@ -1,9 +1,12 @@
 #include <csignal>
 #include <ros/ros.h>
+#include <ros/console.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/fill_image.h>
+#include <camera_info_manager/camera_info_manager.h>
+#include <image_transport/image_transport.h>
 
 #include <Argus/Argus.h>
 #include <EGLStream/EGLStream.h>
@@ -26,6 +29,12 @@ static const Range<float> GAIN_RANGE(1, 44);
 static const Range<float> ISP_DIGITAL_GAIN_RANGE(1, 1);
 static const Range<uint64_t> EXPOSURE_TIME_RANGE(44000, 1000000);
 
+//image_transport::ImageTransport left_image_transport;
+//image_transport::ImageTransport right_image_transport;
+image_transport::CameraPublisher left_camera_pub;
+image_transport::CameraPublisher right_camera_pub;
+boost::shared_ptr<camera_info_manager::CameraInfoManager> left_cinfo_cur;
+boost::shared_ptr<camera_info_manager::CameraInfoManager> right_cinfo_cur;
 ros::Publisher left_image_pub;
 ros::Publisher left_camera_info_pub;
 ros::Publisher right_image_pub;
@@ -182,14 +191,26 @@ bool CudaFrameAcquire::publish(bool leftFrame) {
   cuSurfObjectDestroy(cudaSurfObj1);
   cuSurfObjectDestroy(cudaSurfObj2);
 
-  sensor_msgs::Image output;
-  output.header.stamp = ros::Time::now();
-  sensor_msgs::fillImage(output, sensor_msgs::image_encodings::BGR8, m_frame.height, m_frame.width, 3 * m_frame.width, (void*) oBuffer);
+  //sensor_msgs::Image output;
+  sensor_msgs::ImagePtr output(new sensor_msgs::Image());
+  output->header.stamp = ros::Time::now();
+  sensor_msgs::fillImage(*output, sensor_msgs::image_encodings::BGR8, m_frame.height, m_frame.width, 3 * m_frame.width, (void*) oBuffer);
+
+  sensor_msgs::CameraInfoPtr left_cinfo;
+  sensor_msgs::CameraInfoPtr right_cinfo;
+  left_cinfo.reset(new sensor_msgs::CameraInfo(left_cinfo_cur->getCameraInfo()));
+  right_cinfo.reset(new sensor_msgs::CameraInfo(right_cinfo_cur->getCameraInfo()));
+  left_cinfo->header = output->header;
+  right_cinfo->header = output->header;
+  left_cinfo->header.frame_id = "stereo_frame";
+  right_cinfo->header.frame_id = "stereo_frame";
 
   if (leftFrame) {
-    left_image_pub.publish(output);
+    //left_image_pub.publish(output);
+    left_camera_pub.publish(output, left_cinfo);
   } else {
-    right_image_pub.publish(output);
+    right_camera_pub.publish(output, right_cinfo);
+    //right_image_pub.publish(output);
   }
   return true;
 }
@@ -215,7 +236,7 @@ static bool execute() {
 
   std::vector <CameraDevice*> lrCameras;
   lrCameras.push_back(cameraDevices[0]);
-  lrCameras.push_back(cameraDevices[2]);
+  lrCameras.push_back(cameraDevices[1]);
 
   UniqueObj<CaptureSession> captureSession(iCameraProvider->createCaptureSession(lrCameras));
   ICaptureSession *iCaptureSession = interface_cast<ICaptureSession>(captureSession);
@@ -308,12 +329,39 @@ static bool execute() {
 
 int main(int argc, char *argv[]) {
   ros::init(argc, argv, "argus_stereo_node");
-  ros::NodeHandle nh;
+  ros::NodeHandle nh, nh_private("~");
+  ros::NodeHandle nh_left(nh, "camera/left"), nh_right(nh, "camera/right");
+  image_transport::ImageTransport image_transport_(nh);
+  boost::shared_ptr<camera_info_manager::CameraInfoManager> a(new camera_info_manager::CameraInfoManager(nh_left));
+  boost::shared_ptr<camera_info_manager::CameraInfoManager> b(new camera_info_manager::CameraInfoManager(nh_right));
+  std::string left_cinfo_url, right_cinfo_url;
 
-  left_image_pub = nh.advertise<sensor_msgs::Image>("/camera/left/image_raw", 1);
+  nh_private.getParam("left_cinfo_url", left_cinfo_url);
+  nh_private.getParam("right_cinfo_url", right_cinfo_url);
+  ROS_INFO(left_cinfo_url.c_str());
+  ROS_INFO(right_cinfo_url.c_str());
+  //std::cout << left_cinfo_url << std::endl;
+  //std::cout << right_cinfo_url << std::endl;
+
+  left_cinfo_cur = a;
+  right_cinfo_cur = b;
+  //left_cinfo_cur = new camera_info_manager::CameraInfoManager(nh);
+  //right_cinfo_cur = new camera_info_manager::CameraInfoManager(nh);
+  left_cinfo_cur->setCameraName("left_camera_name");
+  right_cinfo_cur->setCameraName("right_camera_name");
+  if (left_cinfo_cur->validateURL(left_cinfo_url)) {
+    left_cinfo_cur->loadCameraInfo(left_cinfo_url);
+  }
+  if (right_cinfo_cur->validateURL(right_cinfo_url)) {
+    right_cinfo_cur->loadCameraInfo(right_cinfo_url);
+  }
+
+  left_camera_pub = image_transport_.advertiseCamera("camera/left/image_raw", 1);
+  right_camera_pub = image_transport_.advertiseCamera("camera/right/image_raw", 1);
+  /*left_image_pub = nh.advertise<sensor_msgs::Image>("/camera/left/image_raw", 1);
   left_camera_info_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/left/camera_info", 1);
-  right_image_pub = nh.advertise<sensor_msgs::Image>("/camera/right/image", 1);
-  right_camera_info_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/right/camera_info", 1);
+  right_image_pub = nh.advertise<sensor_msgs::Image>("/camera/right/image_raw", 1);
+  right_camera_info_pub = nh.advertise<sensor_msgs::CameraInfo>("/camera/right/camera_info", 1);*/
   
   if (!ArgusSamples::execute()) {
     delete[] oBuffer;

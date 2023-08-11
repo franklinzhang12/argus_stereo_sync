@@ -4,7 +4,7 @@ project(argus_stereo_sync)
 set(ARGUS_DIR /usr/src/jetson_multimedia_api/argus)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake "${CMAKE_MODULE_PATH}")
 
-find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs)
+find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs image_transport camera_info_manager)
 find_package(CUDA REQUIRED)
 find_package(Argus REQUIRED)
 
