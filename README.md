@@ -1,5 +1,5 @@
 # Fork note
-Changes to stereo sync node so that it (hopefully) publishes camera info, enabling it to be used with [stereo_image_proc](http://wiki.ros.org/stereo_image_proc)
+Changes to stereo sync node so that it (hopefully) advertises a camera_info service, enabling it to be used with [camera_calibration](http://wiki.ros.org/camera_calibration)
 
 # Argus Stereo Sync
 > Disclaimer: The following piece of software is under development and has only undergone a couple of "tabletop" tests so far. It is not guaranteed to work as intended, or to expectations.
